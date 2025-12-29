@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -14,6 +16,9 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/samsirama/go-wms-saas/internal/adapters/config"
+	"github.com/samsirama/go-wms-saas/internal/adapters/handler"
+	"github.com/samsirama/go-wms-saas/internal/adapters/repository"
+	"github.com/samsirama/go-wms-saas/internal/core/services"
 )
 
 func main() {
@@ -23,13 +28,34 @@ func main() {
 
 	cfg := config.LoadConfig()
 
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	pool, err := cfg.Database.NewPool(ctx)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer pool.Close()
+
+	log.Println("Database connected successfully")
+
+	productRepo := repository.NewProductRepo(pool)
+	stockRepo := repository.NewStockRepo(pool)
+	txManager := repository.NewPostgresDB(pool)
+
+	productSvc := services.NewProductService(productRepo)
+	stockSvc := services.NewStockService(stockRepo, txManager)
+
+	productHandler := handler.NewProductHandler(productSvc)
+	stockHandler := handler.NewStockHandler(stockSvc)
+
 	app := fiber.New(fiber.Config{
 		AppName:               "WMS SaaS API",
 		ServerHeader:          "Fiber",
 		StrictRouting:         true,
 		CaseSensitive:         true,
 		DisableStartupMessage: false,
-		BodyLimit:             4 * 1024 * 1024, // 4MB limit
+		BodyLimit:             4 * 1024 * 1024,
 		ReadTimeout:           cfg.Server.ReadTimeout,
 		WriteTimeout:          cfg.Server.WriteTimeout,
 		ErrorHandler:          customErrorHandler,
@@ -54,9 +80,15 @@ func main() {
 	})
 
 	api := app.Group("/api/v1")
-	api.Get("/ping", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"message": "pong"})
-	})
+
+	api.Post("/products", productHandler.Create)
+	api.Get("/products", productHandler.List)
+	api.Get("/products/:id", productHandler.GetByID)
+
+	api.Post("/stock/reserve", stockHandler.ReserveStock)
+	api.Post("/stock/release", stockHandler.ReleaseStock)
+	api.Get("/stock/:id", stockHandler.GetStockLevel)
+	api.Get("/stock/:id/history", stockHandler.GetMutationHistory)
 
 	go func() {
 		if err := app.Listen(fmt.Sprintf(":%s", cfg.Server.Port)); err != nil {
