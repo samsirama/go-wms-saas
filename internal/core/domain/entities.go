@@ -1,7 +1,13 @@
 package domain
 
 import (
+	"errors"
 	"time"
+)
+
+var (
+	ErrOptimisticLock = errors.New("record was updated by another transaction")
+	ErrNotFound       = errors.New("record not found")
 )
 
 type Product struct {

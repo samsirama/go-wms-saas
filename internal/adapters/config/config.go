@@ -1,9 +1,13 @@
 package config
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Config struct {
@@ -84,6 +88,35 @@ func LoadConfig() *Config {
 			AllowedOrigins: getEnv("ALLOWED_ORIGINS", "*"),
 		},
 	}
+}
+
+func (c *DatabaseConfig) ConnectionString() string {
+	return fmt.Sprintf(
+		"postgres://%s:%s@%s:%s/%s?sslmode=%s",
+		c.User, c.Password, c.Host, c.Port, c.DBName, c.SSLMode,
+	)
+}
+
+func (c *DatabaseConfig) NewPool(ctx context.Context) (*pgxpool.Pool, error) {
+	poolCfg, err := pgxpool.ParseConfig(c.ConnectionString())
+	if err != nil {
+		return nil, fmt.Errorf("parse pool config: %w", err)
+	}
+
+	poolCfg.MaxConns = int32(c.MaxConnections)
+	poolCfg.MinConns = int32(c.MaxIdleConns)
+	poolCfg.MaxConnLifetime = c.ConnMaxLifetime
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	if err != nil {
+		return nil, fmt.Errorf("create pool: %w", err)
+	}
+
+	if err := pool.Ping(ctx); err != nil {
+		return nil, fmt.Errorf("ping database: %w", err)
+	}
+
+	return pool, nil
 }
 
 func getEnv(key, defaultValue string) string {
