@@ -43,7 +43,7 @@ func main() {
 	stockRepo := repository.NewStockRepo(pool)
 	txManager := repository.NewPostgresDB(pool)
 
-	productSvc := services.NewProductService(productRepo)
+	productSvc := services.NewProductService(productRepo, stockRepo, txManager)
 	stockSvc := services.NewStockService(stockRepo, txManager)
 
 	productHandler := handler.NewProductHandler(productSvc)

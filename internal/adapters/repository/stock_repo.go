@@ -21,6 +21,24 @@ func NewStockRepo(pool *pgxpool.Pool) *StockRepo {
 	}
 }
 
+func (r *StockRepo) Create(ctx context.Context, stock *domain.Stock) error {
+	q := `
+		INSERT INTO stocks (id, product_id, quantity, version, created_at, updated_at)
+		VALUES (gen_random_uuid(), $1, $2, $3, NOW(), NOW())
+		RETURNING id, created_at, updated_at
+	`
+
+	conn := r.db.getConn(ctx)
+	row := conn.QueryRow(ctx, q, stock.ProductID, stock.Quantity, stock.Version)
+
+	err := row.Scan(&stock.ID, &stock.CreatedAt, &stock.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("insert stock: %w", err)
+	}
+
+	return nil
+}
+
 func (r *StockRepo) GetByProductID(ctx context.Context, productID string) (*domain.Stock, error) {
 	q := `
 		SELECT id, product_id, quantity, version, created_at, updated_at

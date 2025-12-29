@@ -7,6 +7,7 @@ import (
 )
 
 type StockRepository interface {
+	Create(ctx context.Context, stock *domain.Stock) error
 	GetByProductID(ctx context.Context, productID string) (*domain.Stock, error)
 
 	// UpdateWithOptimisticLock compares version before updating.
